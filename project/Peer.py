@@ -20,19 +20,23 @@ class FileExchangePeer(object):
     
     def __init__(self,name):
         self.name = name
-        self.heartbeat_wait_s =random.randint(150,300)/1000.0 # choose rand int to start counting
+        self.heartbeat_wait_s = random.randint(150,300)/1000.0 # choose rand int to start counting
         self.epoch_lock = threading.Lock()
         self.already_voted = False
 
         ns = Pyro5.api.locate_ns() 
 
+        
         try:
             uri = ns.lookup("tracker")
-            self.epoch = Pyro5.api.Proxy(uri).get_epoch()
+            tracker_proxy = Pyro5.api.Proxy(uri)
+            self.epoch = tracker_proxy.get_epoch()
+            tracker_name = tracker_proxy.get_name()
         except:
             self.epoch = 0
+            tracker_name = "EMPTY"
         
-        print(f"Peer {self.name} started || Current Epoch {self.epoch}\n")
+        print(f"Peer {self.name} started || Current Epoch {self.epoch} || TRACKER: {tracker_name}\n")
 
         
     
@@ -101,10 +105,16 @@ class FileExchangePeer(object):
                 print("Became new leader")
 
                 self._hbsend_thread = threading.Thread(target=self.send_heartbeats, daemon=True)
+                
+                ns_items = ns.list()
+                tracker_uri =ns_items[f"tracker"]
+                for name,cur_uri in ns_items.items():
+                    if(name[:4]=="peer"):
+                        try:  
+                            Pyro5.api.Proxy(cur_uri).update_leader(election_epoch,tracker_uri)
+                        except: pass
                 self._hbsend_thread.start()
-                threading.Thread(target=self.send_heartbeats, daemon=True).start()
-                #inform voters of new leader #TODO
-                #
+                
 
 
     def send_heartbeats(self):
@@ -127,6 +137,10 @@ class FileExchangePeer(object):
     def get_epoch(self):
         with self.epoch_lock:
             return self.epoch
+        
+    @Pyro5.api.expose
+    def get_name(self):
+        return self.name
 
 
 
@@ -152,11 +166,12 @@ class FileExchangePeer(object):
             return True
 
     @Pyro5.api.expose  
-    def update_leader(self,epoch):
-        if(self.epoch>=epoch):
+    def update_leader(self,epoch,uri):
+        if(self.epoch>epoch):
             return
         self.epoch = epoch
-        print(f"Updated Leader on epoch {epoch}")
+        tracker_proxy = Pyro5.api.Proxy(uri)
+        print(f"Updated Leader to {tracker_proxy.get_name()} on epoch {epoch}")
         #send data to new tracker TODO
 
 
