@@ -5,3 +5,9 @@ Tracker Election
 Tracker Population
 
 File Exchange P2P
+
+
+
+
+# Receives 1st candidate (sets election mode) - votes to 1st candidate and resets heartbeat
+# Receives 2nd 3rd etc candidate - votes No and reset heartbeat
