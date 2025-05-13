@@ -8,6 +8,7 @@ import threading
 import concurrent.futures
 import Pyro5.api
 from enum import Enum
+from client import Client
 
 class NodeState(Enum):
     FOLLOWER = 1
@@ -17,12 +18,17 @@ class NodeState(Enum):
 
 class FileExchangePeer(object):
     state:NodeState = NodeState.FOLLOWER
-    
+    file_list = {}
+
     def __init__(self,name):
         self.name = name
         self.heartbeat_wait_s = random.randint(150,300)/1000.0 # choose rand int to start counting
         self.epoch_lock = threading.Lock()
         self.already_voted = False
+
+        self.files_lock = threading.Lock()
+
+        self.client = Client()
 
         ns = Pyro5.api.locate_ns() 
 
@@ -49,6 +55,7 @@ class FileExchangePeer(object):
         self._hb_thread.start() # Roda self._hb_watchdog em uma nova thread
         
         #create thread for program (to add, remove and ask for files)
+        self.client.start()
     
     #HEARTBEAT RECEIVER
     @Pyro5.api.expose
@@ -187,7 +194,25 @@ class FileExchangePeer(object):
         self.epoch = epoch
         tracker_proxy = Pyro5.api.Proxy(uri)
         print(f"Updated Leader to {tracker_proxy.get_name()} on epoch {epoch}")
-        #send data to new tracker TODO
+        
+        tracker_proxy.register_file(self.name, self.client.files.keys())
+        file_list = None
+
+    # Registra arquivo no tracker
+    @Pyro5.api.expose
+    def register_file(self, peer_name, file_list):
+        if self.state == NodeState.LEADER:
+            with self.files_lock:
+                if self.file_list == None:
+                    self.file_list = {}
+                    self.file_list[self.name] = self.client.files.keys()
+
+                if peer_name in self.file_list:
+                    self.file_list[peer_name].extend(file_list)
+                else:
+                    self.file_list[peer_name] = file_list
+
+
 
 
     
