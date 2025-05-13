@@ -28,6 +28,7 @@ class FileExchangePeer(object):
 
         
         try:
+            # Find tracker, get tacker proxy, init epoch storage in tracker
             uri = ns.lookup("tracker")
             tracker_proxy = Pyro5.api.Proxy(uri)
             self.epoch = tracker_proxy.get_epoch()
@@ -42,10 +43,10 @@ class FileExchangePeer(object):
     
     def start(self):
         #start new threads for startup
-        self._hb_lock = threading.Lock()
-        self._hb_event = threading.Event()
+        self._hb_lock = threading.Lock() # mutex para as operações de hearbeat
+        self._hb_event = threading.Event() # sinalize o evento da thread
         self._hb_thread = threading.Thread(target=self._hb_watchdog, daemon=True)
-        self._hb_thread.start()
+        self._hb_thread.start() # Roda self._hb_watchdog em uma nova thread
         
         #create thread for program (to add, remove and ask for files)
     
@@ -63,6 +64,7 @@ class FileExchangePeer(object):
                 self.do_election()
                 self.heartbeat()
 
+    # Pergunta o voto ao peer para a eleição
     def _ask_for_vote(uri,epoch):
         try:
             return Pyro5.api.Proxy(uri).request_to_vote(epoch)
@@ -71,22 +73,29 @@ class FileExchangePeer(object):
     
     def do_election(self):
         print(f"Starting Election\n")
-        with self.epoch_lock:
+        with self.epoch_lock: # bloqueando os recursos
             self.state = NodeState.CANDIDATE
             self.epoch = self.epoch+1
             self.already_voted = False
+    
+            # Inicia uma nova época e envia a sua candidatura
+            # para todos os peers no servidor de nomes
             election_epoch = self.epoch
             all_names = Pyro5.api.locate_ns().list()
             election_uris = []
             for names,uri in all_names.items():
                 if(names[:4]=="peer"):
                     election_uris.append(uri)
-            
+        
+        # Inicia uma thread para cada peer
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(election_uris)) as executor:
+            # Prepara a execução da pergunta pelo voto para cada peer
             futures = {executor.submit(FileExchangePeer._ask_for_vote, peer_uri,election_epoch): peer_uri for peer_uri in election_uris}
             done, not_done = concurrent.futures.wait(futures,timeout=0.050)
             votes = 0
             total = 0
+
+            # Para cada thread que retornou, conta os votos que recebeu
             for vote in done :
                 result = vote.result()
                 if(result == None):
@@ -94,16 +103,22 @@ class FileExchangePeer(object):
                 total = total+1
                 votes = votes + (1 if result else 0)
             print(f"Got {votes} votes out of {total} on epoch {election_epoch}\n")
-        with self.epoch_lock:
+
+        with self.epoch_lock: # Bloqueando os recursos
+            # Se é um cadidato e recebeu mais da metade dos votos na mesma eleição
             if(self.state == NodeState.CANDIDATE and election_epoch == self.epoch and votes>total/2):
+                
+                # Promove seu próprio estado e se registra como tracker
                 self.state = NodeState.LEADER
                 try:
                     ns = Pyro5.api.locate_ns() 
                     ns.remove("tracker")
                 except: pass
+
                 ns.register("tracker",all_names[f"peer.{self.name}"])
                 print("Became new leader")
 
+                # Inicia o envio do hearbeat
                 self._hbsend_thread = threading.Thread(target=self.send_heartbeats, daemon=True)
                 
                 ns_items = ns.list()
@@ -116,7 +131,7 @@ class FileExchangePeer(object):
                 self._hbsend_thread.start()
                 
 
-
+    # Envia o hearbat para todos os peers na lista
     def send_heartbeats(self):
         ns = Pyro5.api.locate_ns()
         with self.epoch_lock:
@@ -197,13 +212,18 @@ def main():
     print(f"Nome escolhido foi {name}\n")
 
     try:
+        # Registra o processo para receber chamadas remotas
         peer = FileExchangePeer(name=name)
         uri = daemon.register(peer)
         ns.register(f"peer.{peer.name}", uri)
     except:
         print("Algo deu errado\nTerminando processo\n")
         exit()
+
+    # Inicia o fluxo do processo
     peer.start()
+
+    # Inicia o loop de escuta das requisições
     daemon.requestLoop()
     
 
