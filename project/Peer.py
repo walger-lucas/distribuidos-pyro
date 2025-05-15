@@ -226,6 +226,10 @@ class FileExchangePeer(object):
 
             return message
 
+    @Pyro5.api.expose
+    def list_files(self):
+        return self.file_list
+
 
     
 

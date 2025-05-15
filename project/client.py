@@ -58,9 +58,13 @@ class Client(threading.Thread):
         except:
             raise Exception("Erro ao abrir o arquivo!")
     
-    # pade a lista ao tracker
+
     def list_files(self):
-        pass
+        tracker = Pyro5.api.Proxy(self.tracker_uri)
+
+        print("Arquivos listado: ")
+        print(tracker.list_files())
+        print("\n\n\n")
 
 
     def download_file(self, uri, file_name):
