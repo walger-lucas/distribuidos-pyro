@@ -19,26 +19,30 @@ class NodeState(Enum):
 class FileExchangePeer(object):
     state:NodeState = NodeState.FOLLOWER
     file_list = {}
+    tracker_uri = ''
 
     def __init__(self,name):
         self.name = name
-        self.heartbeat_wait_s = random.randint(150,300)/1000.0 # choose rand int to start counting
+        self.heartbeat_wait_s = random.randint(15,30) # choose rand int to start counting
         self.epoch_lock = threading.Lock()
         self.already_voted = False
 
         self.files_lock = threading.Lock()
 
         self.client = Client()
+        self.client.name = name
 
         ns = Pyro5.api.locate_ns() 
 
         
         try:
             # Find tracker, get tacker proxy, init epoch storage in tracker
-            uri = ns.lookup("tracker")
-            tracker_proxy = Pyro5.api.Proxy(uri)
+            self.tracker_uri = ns.lookup("tracker")
+            tracker_proxy = Pyro5.api.Proxy(self.tracker_uri)
             self.epoch = tracker_proxy.get_epoch()
             tracker_name = tracker_proxy.get_name()
+            
+            self.client.tracker_uri = self.tracker_uri
         except:
             self.epoch = 0
             tracker_name = "EMPTY"
@@ -124,7 +128,7 @@ class FileExchangePeer(object):
 
                 ns.register("tracker",all_names[f"peer.{self.name}"])
                 print("Became new leader")
-
+                
                 # Inicia o envio do hearbeat
                 self._hbsend_thread = threading.Thread(target=self.send_heartbeats, daemon=True)
                 
@@ -135,6 +139,8 @@ class FileExchangePeer(object):
                         try:  
                             Pyro5.api.Proxy(cur_uri).update_leader(election_epoch,tracker_uri)
                         except: pass
+                        
+                print("send_heartbeats")
                 self._hbsend_thread.start()
                 
 
@@ -191,6 +197,8 @@ class FileExchangePeer(object):
     def update_leader(self,epoch,uri):
         if(self.epoch>epoch):
             return
+        self.tracker_uri = uri
+        self.client.tracker_uri = uri
         self.epoch = epoch
         tracker_proxy = Pyro5.api.Proxy(uri)
         print(f"Updated Leader to {tracker_proxy.get_name()} on epoch {epoch}")
@@ -212,7 +220,11 @@ class FileExchangePeer(object):
                 else:
                     self.file_list[peer_name] = file_list
 
+            message = f"{file_list} de {peer_name} registrado com sucesso!"
 
+            print(message)
+
+            return message
 
 
     

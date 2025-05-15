@@ -5,6 +5,8 @@ import Pyro5.api
 class Client(threading.Thread):
     files = {}
     lock = None
+    tracker_uri = None
+    name = ''
 
     def run(self):
         '''
@@ -30,16 +32,16 @@ class Client(threading.Thread):
             print("\n\n\n")
 
             match(selected_option):
-                case 1:
+                case "1":
                     file_path = input("Informe o local do arquivo: ")
                     file_name = input("Informe o nome de compartilhamento do arquivo: ")
 
-                    self.add_file(file_path, file_name)
+                    self.add_file(file_name, file_path)
 
-                case 2:
+                case "2":
                     self.list_files()
 
-                case 3:
+                case "3":
                     uri = input("Informe a URI do peer: ")
                     file_name = input("Informe o nome do arquivos: ")
     
@@ -47,11 +49,16 @@ class Client(threading.Thread):
         with open(path, "rb") as file:
             file_bytes = file.read()
         
-        with self.lock():
-            self.file["name"] = file_bytes
+        with self.lock:
+            self.files[name] = file_bytes
 
+        try:
+            tracker = Pyro5.api.Proxy(self.tracker_uri)
+            print(tracker.register_file(self.name, [name]))
+        except:
+            raise Exception("Erro ao abrir o arquivo!")
     
-
+    # pade a lista ao tracker
     def list_files(self):
         pass
 
@@ -63,3 +70,6 @@ class Client(threading.Thread):
             file.write(file_bytes)
 
         print("Arquivo baixado com sucesso!")
+
+
+    # get file chamado pelo peer
