@@ -230,6 +230,10 @@ class FileExchangePeer(object):
     def list_files(self):
         return self.file_list
 
+    @Pyro5.api.expose
+    def get_file(self, filename):
+        return self.client.files[filename]
+
 
     
 

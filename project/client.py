@@ -1,6 +1,7 @@
 # saved as greeting-client.py
 import threading
 import Pyro5.api
+import base64
 
 class Client(threading.Thread):
     files = {}
@@ -42,8 +43,10 @@ class Client(threading.Thread):
                     self.list_files()
 
                 case "3":
-                    uri = input("Informe a URI do peer: ")
+                    name = input("Informe o nome do peer: ")
                     file_name = input("Informe o nome do arquivos: ")
+
+                    self.download_file(name,file_name)
     
     def add_file(self, name, path):
         with open(path, "rb") as file:
@@ -67,13 +70,16 @@ class Client(threading.Thread):
         print("\n\n\n")
 
 
-    def download_file(self, uri, file_name):
+    def download_file(self, peername, file_name):
+        ns = Pyro5.api.locate_ns() 
+        uri = ns.lookup(f"peer.{peername}")
         file_bytes = Pyro5.api.Proxy(uri).get_file(file_name)
-        
+
+        content = base64.b64decode(file_bytes["data"])
+
         with open(f"downloads/{file_name}", "wb") as file:
-            file.write(file_bytes)
+            file.write(content)
 
         print("Arquivo baixado com sucesso!")
-
 
     # get file chamado pelo peer
